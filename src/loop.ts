@@ -1,0 +1,269 @@
+import {
+  CheckpointStore,
+  newCheckpointId,
+  type Checkpoint,
+} from "./checkpoint.js";
+import { estimateMessagesChars, trimMessages } from "./context.js";
+import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
+import { buildSystemPrompt, loadProjectRules } from "./rules.js";
+import {
+  TOOLS_NEED_APPROVAL,
+  approvalSummary,
+  type ApproveFn,
+} from "./sandbox.js";
+import { executeTool, toolDefs } from "./tools/index.js";
+import { toolError } from "./tools/workspace.js";
+import { summarizeText, type TraceRecorder } from "./trace.js";
+import type { Message } from "./types.js";
+
+const MAX_STEPS = 10;
+
+export type LoopResult = {
+  reply: string;
+  steps: number;
+  hitStepLimit: boolean;
+  rulesLoaded: boolean;
+  trimEvents: number;
+  checkpointId?: string;
+};
+
+export type LoopOptions = {
+  onStep?: (info: {
+    step: number;
+    kind: "llm" | "tool" | "deny" | "trim" | "checkpoint";
+    detail: string;
+  }) => void;
+  /** 流式文本 delta（SSE / 终端打字机） */
+  onToken?: (delta: string) => void;
+  onApprove?: ApproveFn;
+  trace?: TraceRecorder;
+  /** 启用后每轮工具结束后落盘；也可 resume */
+  checkpoint?: {
+    store: CheckpointStore;
+    /** 续跑已有 id；不传则新建 */
+    resumeId?: string;
+  };
+};
+
+async function persist(
+  store: CheckpointStore,
+  cp: Checkpoint,
+  onStep?: LoopOptions["onStep"],
+): Promise<void> {
+  const file = await store.save(cp);
+  onStep?.({
+    step: cp.steps,
+    kind: "checkpoint",
+    detail: `已保存 ${cp.id} (${cp.status}) → ${file}`,
+  });
+}
+
+/**
+ * Agent Loop：裁剪 + 流式 LLM + Trace + Checkpoint 续跑
+ */
+export async function runAgentLoop(
+  workspace: string,
+  userText: string,
+  options: LoopOptions = {},
+): Promise<LoopResult> {
+  const { onStep, onApprove, onToken, trace, checkpoint } = options;
+  const projectRules = await loadProjectRules(workspace);
+  const system = buildSystemPrompt(workspace, projectRules);
+  const rulesLoaded = Boolean(projectRules);
+
+  let messages: Message[];
+  let steps = 0;
+  let trimEvents = 0;
+  let cpId: string | undefined;
+  let userGoal = userText;
+  let createdAt = new Date().toISOString();
+
+  if (checkpoint?.resumeId) {
+    const loaded = await checkpoint.store.load(checkpoint.resumeId);
+    if (loaded.status === "done") {
+      return {
+        reply: "(该 checkpoint 已完成，无需续跑)",
+        steps: loaded.steps,
+        hitStepLimit: false,
+        rulesLoaded,
+        trimEvents: loaded.trimEvents,
+        checkpointId: loaded.id,
+      };
+    }
+    cpId = loaded.id;
+    userGoal = loaded.userText;
+    steps = loaded.steps;
+    trimEvents = loaded.trimEvents;
+    createdAt = loaded.createdAt;
+    messages = loaded.messages.map((m) => ({ ...m }));
+    // 刷新 system（AGENTS.md 可能已改），其余历史原样接上
+    if (messages[0]?.role === "system") {
+      messages[0] = { role: "system", content: system };
+    } else {
+      messages.unshift({ role: "system", content: system });
+    }
+    onStep?.({
+      step: steps,
+      kind: "checkpoint",
+      detail: `从 ${cpId} 续跑（已完成 ${steps} 轮）`,
+    });
+  } else {
+    messages = [
+      { role: "system", content: system },
+      { role: "user", content: userText },
+    ];
+    if (checkpoint) {
+      cpId = newCheckpointId();
+    }
+  }
+
+  const snap = (status: Checkpoint["status"], error?: string): Checkpoint => ({
+    id: cpId!,
+    status,
+    workspace,
+    userText: userGoal,
+    steps,
+    trimEvents,
+    messages: messages.map((m) => ({
+      ...m,
+      tool_calls: m.tool_calls?.map((c) => ({
+        ...c,
+        function: { ...c.function },
+      })),
+    })),
+    createdAt,
+    updatedAt: new Date().toISOString(),
+    error,
+  });
+
+  try {
+    while (steps < MAX_STEPS) {
+      steps += 1;
+
+      const { messages: trimmed, stats } = trimMessages(messages);
+      if (stats.didTrim) {
+        trimEvents += 1;
+        const detail = `上下文裁剪 ${stats.beforeChars}→${stats.afterChars} chars（截断 tool=${stats.truncatedToolMessages}, 丢弃消息=${stats.droppedMessages}）`;
+        onStep?.({ step: steps, kind: "trim", detail });
+        trace?.record({
+          step: steps,
+          kind: "trim",
+          detail,
+          trim: {
+            beforeChars: stats.beforeChars,
+            afterChars: stats.afterChars,
+            truncatedToolMessages: stats.truncatedToolMessages,
+            droppedMessages: stats.droppedMessages,
+          },
+        });
+        messages.length = 0;
+        messages.push(...trimmed);
+      }
+
+      const contextChars = estimateMessagesChars(messages);
+      const llmDetail = `第 ${steps} 轮调用模型…（上下文约 ${contextChars} chars）`;
+      onStep?.({ step: steps, kind: "llm", detail: llmDetail });
+      trace?.record({
+        step: steps,
+        kind: "llm",
+        detail: llmDetail,
+        contextChars,
+      });
+
+      const turn = await chatStream(messages, toolDefs, { onToken });
+      appendAssistant(messages, turn);
+
+      if (!turn.tool_calls.length) {
+        const reply = turn.content?.trim() || "(模型没有返回文本)";
+        if (checkpoint && cpId) {
+          await persist(checkpoint.store, snap("done"), onStep);
+        }
+        return {
+          reply,
+          steps,
+          hitStepLimit: false,
+          rulesLoaded,
+          trimEvents,
+          checkpointId: cpId,
+        };
+      }
+
+      for (const call of turn.tool_calls) {
+        const name = call.function.name;
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(call.function.arguments || "{}") as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          args = {};
+        }
+
+        const logArgs =
+          name === "write_file"
+            ? {
+                path: args.path,
+                content: `[${String(args.content ?? "").length} chars]`,
+              }
+            : args;
+
+        if (TOOLS_NEED_APPROVAL.has(name) && onApprove) {
+          const summary = approvalSummary(name, args);
+          const ok = await onApprove({ tool: name, summary, args });
+          if (!ok) {
+            const denied = toolError(`用户拒绝了操作: ${summary}`);
+            const detail = `拒绝 ${name} — ${summary}`;
+            onStep?.({ step: steps, kind: "deny", detail });
+            trace?.record({
+              step: steps,
+              kind: "deny",
+              detail,
+              tool: name,
+              argsSummary: logArgs,
+            });
+            appendToolResult(messages, call.id, name, denied);
+            continue;
+          }
+        }
+
+        const toolDetail = `执行 ${name}(${JSON.stringify(logArgs)})`;
+        onStep?.({ step: steps, kind: "tool", detail: toolDetail });
+
+        const result = await executeTool(workspace, name, args);
+        trace?.record({
+          step: steps,
+          kind: "tool",
+          detail: toolDetail,
+          tool: name,
+          argsSummary: logArgs,
+          resultSummary: summarizeText(result, 500),
+        });
+        appendToolResult(messages, call.id, name, result);
+      }
+
+      // 一轮工具跑完：落盘，便于中途杀掉进程后续跑
+      if (checkpoint && cpId) {
+        await persist(checkpoint.store, snap("running"), onStep);
+      }
+    }
+
+    if (checkpoint && cpId) {
+      await persist(checkpoint.store, snap("done"), onStep);
+    }
+    return {
+      reply: `已达到最大步数 ${MAX_STEPS}，停止循环。可缩小问题或提高 MAX_STEPS。`,
+      steps,
+      hitStepLimit: true,
+      rulesLoaded,
+      trimEvents,
+      checkpointId: cpId,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (checkpoint && cpId) {
+      await persist(checkpoint.store, snap("failed", message), onStep);
+    }
+    throw err;
+  }
+}

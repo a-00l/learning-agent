@@ -1,0 +1,22 @@
+{
+  "name": "mini-cursor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "手写 Agent Loop 学习演示：流式对话 + read_file + 最多 3 步循环",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "chat": "tsx src/cli.ts",
+    "replay": "tsx src/replay.ts",
+    "eval": "tsx src/eval.ts",
+    "server": "tsx src/server.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

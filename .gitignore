@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+traces/*.json
+checkpoints/*.json
+evals/last-report.json

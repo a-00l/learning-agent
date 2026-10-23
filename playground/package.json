@@ -1,0 +1,13 @@
+{
+  "name": "playground-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "给 mini-cursor 练习读文件用的假项目",
+  "dependencies": {
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

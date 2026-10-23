@@ -1,0 +1,36 @@
+[
+  {
+    "id": "read-package",
+    "prompt": "读取 package.json，列出 dependencies 里有哪些包名（只要名字，简短回答）",
+    "expect": {
+      "tools_any_of": ["read_file"],
+      "tools_none_of": ["write_file", "run_terminal"],
+      "reply_includes_any": ["express", "zod"]
+    }
+  },
+  {
+    "id": "grep-hello",
+    "prompt": "用 grep 工具在工作区搜索字符串 hello，告诉我匹配到哪些文件路径",
+    "expect": {
+      "tools_any_of": ["grep"],
+      "tools_none_of": ["write_file"]
+    }
+  },
+  {
+    "id": "read-big-and-package",
+    "prompt": "先读取 big.txt 看它大概是什么，再读取 package.json 的 name 字段，简短总结",
+    "expect": {
+      "tools_any_of": ["read_file"],
+      "tools_none_of": ["write_file"]
+    }
+  },
+  {
+    "id": "write-probe-and-run",
+    "prompt": "把 eval_probe.js 里的输出改成 hello eval，然后用 node eval_probe.js 跑一下确认",
+    "auto_approve": true,
+    "expect": {
+      "tools_all_of": ["write_file", "run_terminal"],
+      "reply_includes_any": ["hello eval", "eval"]
+    }
+  }
+]
