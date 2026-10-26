@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../types.js";
+import { askUser, askUserToolDef, type AskUserFn } from "./ask_user.js";
 import { grep, grepToolDef } from "./grep.js";
 import { readFile, readFileToolDef } from "./read_file.js";
 import { runTerminal, runTerminalToolDef } from "./run_terminal.js";
@@ -10,7 +11,12 @@ export const toolDefs: ToolDefinition[] = [
   grepToolDef,
   writeFileToolDef,
   runTerminalToolDef,
+  askUserToolDef,
 ];
+
+export type ExecuteToolOptions = {
+  askUser?: AskUserFn;
+};
 
 /**
  * 按 tool_calls[].function.name 分发到具体实现。
@@ -21,6 +27,7 @@ export async function executeTool(
   workspace: string,
   name: string,
   args: Record<string, unknown>,
+  opts: ExecuteToolOptions = {},
 ): Promise<string> {
   switch (name) {
     case "read_file":
@@ -36,6 +43,8 @@ export async function executeTool(
       return writeFile(workspace, String(args.path ?? ""), String(args.content ?? ""));
     case "run_terminal":
       return runTerminal(workspace, String(args.command ?? ""));
+    case "ask_user":
+      return askUser(String(args.question ?? ""), opts.askUser);
     default:
       return JSON.stringify({ ok: false, error: `未知工具: ${name}` });
   }

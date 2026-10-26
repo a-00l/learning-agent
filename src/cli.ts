@@ -3,6 +3,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { CheckpointStore } from "./checkpoint.js";
+import { applyControlAction } from "./control.js";
 import { runAgentLoop } from "./loop.js";
 import { TraceRecorder } from "./trace.js";
 
@@ -40,20 +41,55 @@ const model = process.env.OPENAI_MODEL || "deepseek-chat";
 const cpStore = new CheckpointStore(checkpointsDir);
 
 async function main() {
-  console.log("mini-cursor · Day 7（Checkpoint + 流式）");
+  console.log("mini-cursor · Day 8（运行中干预）");
   console.log(`工作区: ${workspace}`);
   console.log(`模型: ${model}`);
-  console.log(`checkpoints: ${checkpointsDir}`);
-  console.log("命令: 直接输入问题 | resume <id> | cps | exit");
-  console.log("SSE 服务: npm run server  → http://127.0.0.1:8787\n");
+  console.log("任务进行中可输入: !pause | !resume | !cancel | !inject <文字>");
+  console.log("其它: cps | resume <id> | exit\n");
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
+  let activeId: string | null = null;
+  let ignoreControlLine = false;
+
   const ask = (prompt: string) =>
-    new Promise<string>((resolve) => rl.question(prompt, resolve));
+    new Promise<string>((resolve) => {
+      ignoreControlLine = true;
+      rl.question(prompt, (ans) => {
+        ignoreControlLine = false;
+        resolve(ans);
+      });
+    });
+
+  const onLine = (line: string) => {
+    if (ignoreControlLine) return;
+    const t = line.trim();
+    if (!t.startsWith("!")) return;
+    if (!activeId) {
+      console.log("  (当前无运行中任务，忽略控制命令)");
+      return;
+    }
+    if (t === "!pause") {
+      applyControlAction(activeId, "pause");
+      console.log(`  [control] pause → ${activeId}`);
+    } else if (t === "!resume") {
+      applyControlAction(activeId, "resume");
+      console.log(`  [control] resume → ${activeId}`);
+    } else if (t === "!cancel") {
+      applyControlAction(activeId, "cancel");
+      console.log(`  [control] cancel → ${activeId}`);
+    } else if (t.startsWith("!inject ")) {
+      const text = t.slice("!inject ".length);
+      applyControlAction(activeId, "inject", text);
+      console.log(`  [control] inject → ${text.slice(0, 80)}`);
+    } else {
+      console.log("  用法: !pause | !resume | !cancel | !inject <文字>");
+    }
+  };
+  rl.on("line", onLine);
 
   while (true) {
     const input = (await ask("you> ")).trim();
@@ -93,13 +129,17 @@ async function main() {
 
     try {
       process.stdout.write("assistant> ");
-      const result = await runAgentLoop(workspace, userText, {
+      const loopPromise = runAgentLoop(workspace, userText, {
         trace,
         checkpoint: { store: cpStore, resumeId },
         onToken: (delta) => process.stdout.write(delta),
         onStep: ({ kind, detail }) => {
-          // 步骤日志换行打印，避免和流式 token 搅在一起
           console.log(`\n  [${kind}] ${detail}`);
+          // 从「控制通道 id=xxx」里抠出 activeId
+          if (kind === "checkpoint" && detail.includes("控制通道 id=")) {
+            const m = detail.match(/控制通道 id=(\S+)/);
+            if (m) activeId = m[1];
+          }
         },
         onApprove: async ({ summary }) => {
           console.log();
@@ -108,15 +148,23 @@ async function main() {
             .toLowerCase();
           return ans === "y" || ans === "yes";
         },
+        onAskUser: async (question) => {
+          console.log();
+          return (await ask(`  [ask_user] ${question}\n  answer> `)).trim();
+        },
       });
+
+      const result = await loopPromise;
+      activeId = null;
 
       console.log();
       const file = await trace.finish(result);
       console.log(
-        `  (steps=${result.steps}${result.hitStepLimit ? ", hit limit" : ""}, rules=${result.rulesLoaded ? "on" : "off"}, trims=${result.trimEvents}, cp=${result.checkpointId ?? "-"})`,
+        `  (steps=${result.steps}${result.hitStepLimit ? ", hit limit" : ""}${result.cancelled ? ", cancelled" : ""}, rules=${result.rulesLoaded ? "on" : "off"}, trims=${result.trimEvents}, cp=${result.checkpointId ?? "-"})`,
       );
       console.log(`  (trace: ${file})\n`);
     } catch (err) {
+      activeId = null;
       const message = err instanceof Error ? err.message : String(err);
       console.log();
       trace.record({ step: 0, kind: "error", detail: message });
@@ -136,6 +184,7 @@ async function main() {
     }
   }
 
+  rl.off("line", onLine);
   rl.close();
 }
 

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Message } from "./types.js";
 
-export type CheckpointStatus = "running" | "done" | "failed";
+export type CheckpointStatus = "running" | "done" | "failed" | "cancelled";
 
 /** 可恢复状态：核心是 messages，不是往 user prompt 里贴摘要 */
 export type Checkpoint = {

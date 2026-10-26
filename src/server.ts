@@ -1,14 +1,16 @@
 /**
- * Day7：HTTP + SSE
- * POST /api/run  { "prompt": "...", "resumeId"?: "...", "autoApprove"?: true }
- * 响应：text/event-stream（step / token / done / error）
- * GET  /         简易演示页
+ * Day8：HTTP + SSE + 运行中控制
+ * POST /api/run      { prompt?, resumeId?, autoApprove? } → SSE
+ * POST /api/control  { checkpointId, action, text? }
+ * GET  /api/checkpoints
+ * GET  /
  */
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CheckpointStore } from "./checkpoint.js";
+import { applyControlAction, type ControlAction } from "./control.js";
 import { runAgentLoop } from "./loop.js";
 import { TraceRecorder } from "./trace.js";
 
@@ -65,32 +67,53 @@ const demoHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>mini-cursor SSE</title>
+  <title>mini-cursor SSE Day8</title>
   <style>
-    body { font-family: ui-sans-serif, system-ui; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
-    #log { white-space: pre-wrap; background: #111; color: #d7ffd7; padding: 1rem; border-radius: 8px; min-height: 200px; }
+    body { font-family: ui-sans-serif, system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    #log { white-space: pre-wrap; background: #111; color: #d7ffd7; padding: 1rem; border-radius: 8px; min-height: 160px; max-height: 320px; overflow: auto; }
     #out { white-space: pre-wrap; border: 1px solid #ddd; padding: 1rem; border-radius: 8px; min-height: 80px; }
-    input, button { font-size: 1rem; padding: 0.4rem 0.6rem; }
-    input { width: 70%; }
+    input, button { font-size: 1rem; padding: 0.4rem 0.6rem; margin: 0.2rem; }
+    #cp { font-family: monospace; }
   </style>
 </head>
 <body>
-  <h1>mini-cursor · SSE</h1>
-  <p>POST /api/run 流式推送 step / token / done</p>
+  <h1>mini-cursor · Day8 干预</h1>
   <p>
-    <input id="prompt" value="读取 package.json 里有哪些依赖？" />
+    <input id="prompt" style="width:60%" value="先 ask_user 问我要不要改 hello.js，再按我的回答行动" />
     <button id="go">Run</button>
     <label><input type="checkbox" id="auto" checked /> autoApprove</label>
+  </p>
+  <p>
+    id: <span id="cp">-</span>
+    <button id="pause">pause</button>
+    <button id="resume">resume</button>
+    <button id="cancel">cancel</button>
+    <input id="inj" placeholder="inject 文字" style="width:40%" />
+    <button id="inject">inject</button>
   </p>
   <h3>tokens</h3>
   <div id="out"></div>
   <h3>events</h3>
   <div id="log"></div>
   <script>
-    const log = (s) => { document.getElementById('log').textContent += s + '\\n'; };
+    let cpId = '';
+    const log = (s) => { const el = document.getElementById('log'); el.textContent += s + '\\n'; el.scrollTop = el.scrollHeight; };
+    const setCp = (id) => { cpId = id || ''; document.getElementById('cp').textContent = cpId || '-'; };
+    async function control(action, text) {
+      if (!cpId) return alert('还没有 checkpoint id');
+      const body = { checkpointId: cpId, action };
+      if (text) body.text = text;
+      const r = await fetch('/api/control', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      log('[control] ' + JSON.stringify(await r.json()));
+    }
+    document.getElementById('pause').onclick = () => control('pause');
+    document.getElementById('resume').onclick = () => control('resume');
+    document.getElementById('cancel').onclick = () => control('cancel');
+    document.getElementById('inject').onclick = () => control('inject', document.getElementById('inj').value);
     document.getElementById('go').onclick = async () => {
       document.getElementById('log').textContent = '';
       document.getElementById('out').textContent = '';
+      setCp('');
       const prompt = document.getElementById('prompt').value;
       const autoApprove = document.getElementById('auto').checked;
       const res = await fetch('/api/run', {
@@ -121,6 +144,11 @@ const demoHtml = `<!DOCTYPE html>
             document.getElementById('out').textContent += data.text || '';
           } else {
             log('[' + event + '] ' + JSON.stringify(data));
+            if (event === 'step' && data.detail && String(data.detail).includes('控制通道 id=')) {
+              const m = String(data.detail).match(/控制通道 id=(\\S+)/);
+              if (m) setCp(m[1]);
+            }
+            if (event === 'done' && data.checkpointId) setCp(data.checkpointId);
           }
         }
       }
@@ -128,6 +156,21 @@ const demoHtml = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+
+async function readJson(
+  req: http.IncomingMessage,
+): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return {};
+  }
+}
 
 async function handleRun(
   body: { prompt?: string; resumeId?: string; autoApprove?: boolean },
@@ -150,11 +193,17 @@ async function handleRun(
     tracesDir,
   });
 
+  // 简易 ask_user：SSE 环境自动答「按默认继续」（演示页可后续接双向）；
+  // 真正问答请用 CLI 的 onAskUser。
   try {
     const result = await runAgentLoop(workspace, prompt || "(resume)", {
       trace,
       checkpoint: { store, resumeId },
       onApprove: async () => Boolean(body.autoApprove),
+      onAskUser: async (question) => {
+        send("ask", { question });
+        return "（SSE 演示自动回复）请继续你认为合理的方案";
+      },
       onStep: (info) => send("step", info),
       onToken: (text) => send("token", { text }),
     });
@@ -209,17 +258,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/control") {
+    const body = await readJson(req);
+    const checkpointId = String(body.checkpointId ?? "");
+    const action = String(body.action ?? "") as ControlAction;
+    const text = body.text != null ? String(body.text) : undefined;
+    const result = applyControlAction(checkpointId, action, text);
+    res.writeHead(result.ok ? 200 : 400, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/run") {
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    let body: { prompt?: string; resumeId?: string; autoApprove?: boolean } = {};
-    try {
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-    } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "invalid json" }));
-      return;
-    }
+    const body = (await readJson(req)) as {
+      prompt?: string;
+      resumeId?: string;
+      autoApprove?: boolean;
+    };
     const send = attachSse(res);
     await handleRun(body, send, res);
     return;
@@ -231,7 +289,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`mini-cursor SSE server http://127.0.0.1:${port}`);
-  console.log(`  GET  /                 演示页`);
+  console.log(`  GET  /                 演示页（含 pause/resume/cancel/inject）`);
   console.log(`  POST /api/run          SSE 跑任务`);
+  console.log(`  POST /api/control      运行中干预`);
   console.log(`  GET  /api/checkpoints  列出存档`);
 });

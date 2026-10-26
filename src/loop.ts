@@ -3,6 +3,11 @@ import {
   newCheckpointId,
   type Checkpoint,
 } from "./checkpoint.js";
+import {
+  TaskControl,
+  registerControl,
+  unregisterControl,
+} from "./control.js";
 import { estimateMessagesChars, trimMessages } from "./context.js";
 import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
 import { buildSystemPrompt, loadProjectRules } from "./rules.js";
@@ -12,6 +17,7 @@ import {
   type ApproveFn,
 } from "./sandbox.js";
 import { executeTool, toolDefs } from "./tools/index.js";
+import type { AskUserFn } from "./tools/ask_user.js";
 import { toolError } from "./tools/workspace.js";
 import { summarizeText, type TraceRecorder } from "./trace.js";
 import type { Message } from "./types.js";
@@ -25,24 +31,37 @@ export type LoopResult = {
   rulesLoaded: boolean;
   trimEvents: number;
   checkpointId?: string;
+  cancelled?: boolean;
 };
 
 export type LoopOptions = {
   onStep?: (info: {
     step: number;
-    kind: "llm" | "tool" | "deny" | "trim" | "checkpoint";
+    kind:
+      | "llm"
+      | "tool"
+      | "deny"
+      | "trim"
+      | "checkpoint"
+      | "paused"
+      | "inject"
+      | "cancelled";
     detail: string;
   }) => void;
-  /** 流式文本 delta（SSE / 终端打字机） */
   onToken?: (delta: string) => void;
   onApprove?: ApproveFn;
+  /** ask_user 工具回调 */
+  onAskUser?: AskUserFn;
   trace?: TraceRecorder;
-  /** 启用后每轮工具结束后落盘；也可 resume */
   checkpoint?: {
     store: CheckpointStore;
-    /** 续跑已有 id；不传则新建 */
     resumeId?: string;
   };
+  /**
+   * 运行中干预。不传则自动按 checkpointId 注册一份。
+   * 外部可用 getControl(id) / applyControlAction 操作。
+   */
+  control?: TaskControl;
 };
 
 async function persist(
@@ -58,15 +77,36 @@ async function persist(
   });
 }
 
+function flushInjects(
+  messages: Message[],
+  control: TaskControl | undefined,
+  step: number,
+  onStep?: LoopOptions["onStep"],
+): void {
+  if (!control) return;
+  const injects = control.drainInjects();
+  for (const text of injects) {
+    messages.push({
+      role: "user",
+      content: `[运行中指令] ${text}`,
+    });
+    onStep?.({
+      step,
+      kind: "inject",
+      detail: `已注入: ${text.slice(0, 120)}`,
+    });
+  }
+}
+
 /**
- * Agent Loop：裁剪 + 流式 LLM + Trace + Checkpoint 续跑
+ * Agent Loop：裁剪 + 流式 + Trace + Checkpoint + 步间干预（pause/resume/cancel/inject）
  */
 export async function runAgentLoop(
   workspace: string,
   userText: string,
   options: LoopOptions = {},
 ): Promise<LoopResult> {
-  const { onStep, onApprove, onToken, trace, checkpoint } = options;
+  const { onStep, onApprove, onAskUser, onToken, trace, checkpoint } = options;
   const projectRules = await loadProjectRules(workspace);
   const system = buildSystemPrompt(workspace, projectRules);
   const rulesLoaded = Boolean(projectRules);
@@ -80,14 +120,15 @@ export async function runAgentLoop(
 
   if (checkpoint?.resumeId) {
     const loaded = await checkpoint.store.load(checkpoint.resumeId);
-    if (loaded.status === "done") {
+    if (loaded.status === "done" || loaded.status === "cancelled") {
       return {
-        reply: "(该 checkpoint 已完成，无需续跑)",
+        reply: `(该 checkpoint 状态为 ${loaded.status}，无需续跑)`,
         steps: loaded.steps,
         hitStepLimit: false,
         rulesLoaded,
         trimEvents: loaded.trimEvents,
         checkpointId: loaded.id,
+        cancelled: loaded.status === "cancelled",
       };
     }
     cpId = loaded.id;
@@ -96,7 +137,6 @@ export async function runAgentLoop(
     trimEvents = loaded.trimEvents;
     createdAt = loaded.createdAt;
     messages = loaded.messages.map((m) => ({ ...m }));
-    // 刷新 system（AGENTS.md 可能已改），其余历史原样接上
     if (messages[0]?.role === "system") {
       messages[0] = { role: "system", content: system };
     } else {
@@ -117,6 +157,14 @@ export async function runAgentLoop(
     }
   }
 
+  // 控制通道 id：优先已有 checkpoint id，便于 CLI/SSE 用同一编号干预
+  if (checkpoint && !cpId) cpId = newCheckpointId();
+  const publicId = options.control?.id ?? cpId ?? newCheckpointId();
+  const control = registerControl(
+    publicId,
+    options.control ?? new TaskControl(publicId),
+  );
+
   const snap = (status: Checkpoint["status"], error?: string): Checkpoint => ({
     id: cpId!,
     status,
@@ -136,8 +184,51 @@ export async function runAgentLoop(
     error,
   });
 
+  const finishCancelled = async (): Promise<LoopResult> => {
+    onStep?.({
+      step: steps,
+      kind: "cancelled",
+      detail: "任务已取消",
+    });
+    if (checkpoint && cpId) {
+      await persist(checkpoint.store, snap("cancelled", "user cancelled"), onStep);
+    }
+    return {
+      reply: "(任务已取消)",
+      steps,
+      hitStepLimit: false,
+      rulesLoaded,
+      trimEvents,
+      checkpointId: publicId,
+      cancelled: true,
+    };
+  };
+
   try {
+    // 尽早告知控制 id
+    onStep?.({
+      step: steps,
+      kind: "checkpoint",
+      detail: `控制通道 id=${publicId}（pause/resume/cancel/inject）`,
+    });
+
     while (steps < MAX_STEPS) {
+      // ★ 步间门口：取消 / 暂停 / 注入
+      if (control.isCancelled()) {
+        return await finishCancelled();
+      }
+      const ok = await control.waitIfPaused(() => {
+        onStep?.({
+          step: steps,
+          kind: "paused",
+          detail: `已暂停 id=${publicId}，等待 resume/cancel`,
+        });
+      });
+      if (!ok || control.isCancelled()) {
+        return await finishCancelled();
+      }
+      flushInjects(messages, control, steps, onStep);
+
       steps += 1;
 
       const { messages: trimmed, stats } = trimMessages(messages);
@@ -184,11 +275,15 @@ export async function runAgentLoop(
           hitStepLimit: false,
           rulesLoaded,
           trimEvents,
-          checkpointId: cpId,
+          checkpointId: publicId,
         };
       }
 
       for (const call of turn.tool_calls) {
+        if (control.isCancelled()) {
+          return await finishCancelled();
+        }
+
         const name = call.function.name;
         let args: Record<string, unknown> = {};
         try {
@@ -206,12 +301,14 @@ export async function runAgentLoop(
                 path: args.path,
                 content: `[${String(args.content ?? "").length} chars]`,
               }
-            : args;
+            : name === "ask_user"
+              ? { question: args.question }
+              : args;
 
         if (TOOLS_NEED_APPROVAL.has(name) && onApprove) {
           const summary = approvalSummary(name, args);
-          const ok = await onApprove({ tool: name, summary, args });
-          if (!ok) {
+          const approved = await onApprove({ tool: name, summary, args });
+          if (!approved) {
             const denied = toolError(`用户拒绝了操作: ${summary}`);
             const detail = `拒绝 ${name} — ${summary}`;
             onStep?.({ step: steps, kind: "deny", detail });
@@ -230,7 +327,9 @@ export async function runAgentLoop(
         const toolDetail = `执行 ${name}(${JSON.stringify(logArgs)})`;
         onStep?.({ step: steps, kind: "tool", detail: toolDetail });
 
-        const result = await executeTool(workspace, name, args);
+        const result = await executeTool(workspace, name, args, {
+          askUser: onAskUser,
+        });
         trace?.record({
           step: steps,
           kind: "tool",
@@ -242,7 +341,6 @@ export async function runAgentLoop(
         appendToolResult(messages, call.id, name, result);
       }
 
-      // 一轮工具跑完：落盘，便于中途杀掉进程后续跑
       if (checkpoint && cpId) {
         await persist(checkpoint.store, snap("running"), onStep);
       }
@@ -257,7 +355,7 @@ export async function runAgentLoop(
       hitStepLimit: true,
       rulesLoaded,
       trimEvents,
-      checkpointId: cpId,
+      checkpointId: publicId,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -265,5 +363,7 @@ export async function runAgentLoop(
       await persist(checkpoint.store, snap("failed", message), onStep);
     }
     throw err;
+  }   finally {
+    unregisterControl(publicId);
   }
 }

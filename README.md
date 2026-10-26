@@ -1,21 +1,18 @@
 # mini-cursor
 
-手写编码 Agent。当前：**Day 7（Checkpoint + SSE）**。
+手写编码 Agent。当前：**Day 8（运行中干预）**。
 
 ## 命令
 
 ```bash
-npm start           # CLI：流式输出 + 自动 checkpoint；resume <id> / cps
-npm run server      # HTTP SSE：http://127.0.0.1:8787
+npm start           # CLI；任务中可 !pause / !resume / !cancel / !inject …
+npm run server      # http://127.0.0.1:8787 （页面含控制按钮）
 npm run replay -- traces/xxx.json
 npm run eval
 ```
 
-## 架构摘要
+## Day8 要点
 
-- **主路径**：loop ↔ 流式 LLM ↔ tools  
-- **旁路**：Trace 落盘  
-- **存档**：Checkpoint 保存完整 `messages`，续跑时加载回对话  
-- **SSE**：`server.ts` 把 step/token/done 推给浏览器  
-
-课时笔记见 [`lessons/`](./lessons/)。
+- **步间**暂停/继续/取消（不硬掐上游流）
+- **inject** 往 messages 追加运行中指令
+- **ask_user** 工具做人机协作点
