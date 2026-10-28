@@ -41,11 +41,14 @@ const model = process.env.OPENAI_MODEL || "deepseek-chat";
 const cpStore = new CheckpointStore(checkpointsDir);
 
 async function main() {
-  console.log("mini-cursor · Day 10（Few-shot）");
+  console.log("mini-cursor · Day 11（摘要压缩）");
   console.log(`工作区: ${workspace}`);
   console.log(`模型: ${model}`);
   console.log(
     `PROMPT_PROFILE: ${process.env.PROMPT_PROFILE || "good"}（good|sloppy|fewshot）`,
+  );
+  console.log(
+    `CONTEXT_SUMMARY: ${process.env.CONTEXT_SUMMARY || "0"}  CONTEXT_MAX_CHARS: ${process.env.CONTEXT_MAX_CHARS || "20000"}`,
   );
   console.log("任务进行中可输入: !pause | !resume | !cancel | !inject <文字>");
   console.log("其它: cps | resume <id> | exit\n");

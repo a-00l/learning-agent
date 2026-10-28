@@ -1,24 +1,23 @@
 # mini-cursor
 
-手写编码 Agent。当前：**Day 10（Few-shot）**。
+手写编码 Agent。当前：**Day 11（摘要压缩）**。
 
 ## 命令
 
 ```bash
-npm start                   # CLI（PROMPT_PROFILE=good|sloppy|fewshot）
-npm run server              # SSE 演示页
-npm run eval                # 默认题库
-npm run eval:day9:good      # Day9 题库
-npm run eval:day9:sloppy
-npm run eval:day10:good     # Day10 题库（无 user 剧透）
+npm start                   # CLI
+npm run server              # SSE
+npm run demo:day11          # 丢弃 vs 摘要对照
+npm run eval
+npm run eval:day9:good
 npm run eval:day10:fewshot
-npm run eval:day10:sloppy
 npm run replay -- traces/xxx.json
 ```
 
-## Day10 要点
+## Day11 要点
 
-- `fewshot` = good 规则 + 文字正/反例 + 一条含 `tool_calls` 的示范对话  
-- 题库不在 user 里写「必须 ask_user」，用来测 few-shot / 规则是否真生效  
+- `CONTEXT_SUMMARY=1`：超预算时对丢弃段再调一次 LLM 做摘要  
+- `CONTEXT_MAX_CHARS`：字符预算（演示可调小）  
+- `npm run demo:day11`：同一历史对比「省略 N 条」vs「摘要」  
 
 课时笔记见 [`lessons/`](./lessons/)。

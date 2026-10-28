@@ -2,8 +2,8 @@
 
 > 目标：打牢基础，再做工程化 Agent（偏编码型 / 产品型）。  
 > 用法：按阶段推进，做完一项勾选一项；未勾选不急着跳到下一阶段。  
-> 演示仓库：本目录 `mini-cursor/`（Day 10：Few-shot）  
-> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–10）
+> 演示仓库：本目录 `mini-cursor/`（Day 11：摘要压缩）  
+> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–11）
 
 ---
 
@@ -61,7 +61,7 @@
 ### D1 会话内上下文（对应原路线 03）
 
 - [x] **D1.1 消息裁剪策略**：保留 system + 尾部、截断大 tool → `context.ts`（Day4）
-- [ ] **D1.2 摘要压缩**：长对话如何摘要后继续（目前用「省略 N 条」占位提示，真摘要未做）
+- [x] **D1.2 摘要压缩**：长对话如何摘要后继续 → Day11 `summarize.ts` + `CONTEXT_SUMMARY`
 - [ ] **D1.3 关键事实抽取**：任务目标、已确认决策、待办状态单独维护
 
 ### D2 记忆与 RAG（基础补强）
@@ -185,7 +185,7 @@
 
 - [x] **M1 单次 LLM 工具调用 Demo**（阶段 A–B）→ `mini-cursor` Day 0–1（`read_file` + Loop）
 - [x] **M2 手写最小 Agent Loop**（阶段 C）→ Day 2：read / grep / write / terminal
-- [x] **M3 带上下文压缩的长对话 Agent**（阶段 D）→ Day4：`trimMessages`（截断 + 丢弃；真摘要待补）
+- [x] **M3 带上下文压缩的长对话 Agent**（阶段 D）→ Day4 裁剪 + Day11 摘要
 - [x] **M4 带规则 + 沙箱的编码助手雏形**（阶段 F）→ Day 3：AGENTS.md + 审批 + sandbox
 - [x] **M5 可 checkpoint 恢复的长任务 Agent**（阶段 E + G）→ Day7 Checkpoint（长任务状态机未做）
 - [x] **M6 带 trace + 回归集的可观测 Agent**（阶段 H）→ Day5 Trace + Day6 `npm run eval`
@@ -209,7 +209,7 @@
 | A | LLM 与调用基础 | A2 + A4 流式已通（A1/A3/A5–A7 未做） |
 | B | Prompt 与行为约束 | Day9–10 完成（B1–B5） |
 | C | Tool + Agent Loop | Day2+Day9（C0.1–0.2 描述；C0.3–0.4 + C1 已有） |
-| D | 上下文 / 记忆 / RAG | Day4 完成 D1.1（D1.2/D2 未做） |
+| D | 上下文 / 记忆 / RAG | Day4 D1.1 + Day11 D1.2（D1.3/D2 未做） |
 | E | 规划 / 长任务 / 多 Agent | 未开始 |
 | F | 规则 / 沙箱 / 长命令 / 工具发现 | Day3 完成 F1 + F2.1–2.3（长命令/工具发现未做） |
 | G | Code Mode / 干预 / 持久化 | Day7–8：G2 + G3.1–3.2（Code Mode/幂等未做） |

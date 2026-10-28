@@ -17,6 +17,7 @@ export type TraceEvent = {
     afterChars: number;
     truncatedToolMessages: number;
     droppedMessages: number;
+    summarized?: boolean;
   };
 };
 

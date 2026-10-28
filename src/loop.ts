@@ -244,10 +244,15 @@ export async function runAgentLoop(
 
       steps += 1;
 
-      const { messages: trimmed, stats } = trimMessages(messages);
+      const { messages: trimmed, stats } = await trimMessages(messages);
       if (stats.didTrim) {
         trimEvents += 1;
-        const detail = `上下文裁剪 ${stats.beforeChars}→${stats.afterChars} chars（截断 tool=${stats.truncatedToolMessages}, 丢弃消息=${stats.droppedMessages}）`;
+        const mode = stats.summarized
+          ? "摘要"
+          : stats.droppedMessages > 0
+            ? "丢弃"
+            : "截断";
+        const detail = `上下文裁剪[${mode}] ${stats.beforeChars}→${stats.afterChars} chars（截断 tool=${stats.truncatedToolMessages}, 丢弃消息=${stats.droppedMessages}, summarized=${stats.summarized}）`;
         onStep?.({ step: steps, kind: "trim", detail });
         trace?.record({
           step: steps,
@@ -258,6 +263,7 @@ export async function runAgentLoop(
             afterChars: stats.afterChars,
             truncatedToolMessages: stats.truncatedToolMessages,
             droppedMessages: stats.droppedMessages,
+            summarized: stats.summarized,
           },
         });
         messages.length = 0;
