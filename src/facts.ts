@@ -213,7 +213,8 @@ export function upsertFactsMessage(
   card: string,
 ): Message[] {
   const factMsg: Message = { role: "user", content: card };
-  const out = messages.map((m) => ({
+  // 显式 Message[]：避免 map 把 tool_calls 推成「必有键」导致无法赋回普通 Message
+  const out: Message[] = messages.map((m) => ({
     ...m,
     tool_calls: m.tool_calls?.map((c) => ({
       ...c,
