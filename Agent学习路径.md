@@ -2,8 +2,8 @@
 
 > 目标：打牢基础，再做工程化 Agent（偏编码型 / 产品型）。  
 > 用法：按阶段推进，做完一项勾选一项；未勾选不急着跳到下一阶段。  
-> 演示仓库：本目录 `mini-cursor/`（Day 9：Prompt 与工具描述）  
-> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–9）
+> 演示仓库：本目录 `mini-cursor/`（Day 10：Few-shot）  
+> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–10）
 
 ---
 
@@ -25,13 +25,13 @@
 ## 阶段 B：Prompt 与行为约束
 
 - [x] **B1 Prompt 结构**：角色、目标、约束、输出格式怎么写才稳 → Day9 `prompts.ts` good 档
-- [ ] **B2 Few-shot**：用例子约束风格与边界 case（未做）
+- [x] **B2 Few-shot**：用例子约束风格与边界 case → Day10 `fewshot` 档 + `fewShotDemoMessages`
 - [x] **B3 工具描述写作**：name / description / parameters 如何降低误选 → 各 `*ToolDef` 适用/不适用
 - [x] **B4 拒答与边界**：越权、不确定、缺信息时该怎么表现 → ask_user + Day9 题
 - [x] **B5 Prompt Injection 入门**：不可信输入如何污染指令；基本防护思路 → `untrusted_note.md` + system 约束
 
 **阶段验收**：同一任务写出「差 prompt / 好 prompt」对比，并能量化差异（成功率或人工评分）。  
-**进度**：Day9 用 `eval:day9:good` vs `eval:day9:sloppy` 对照。
+**进度**：Day9 good/sloppy；Day10 `eval:day10:good|fewshot|sloppy`（题干无剧透）。
 
 ---
 
@@ -207,7 +207,7 @@
 | 阶段 | 主题 | 状态 |
 |------|------|------|
 | A | LLM 与调用基础 | A2 + A4 流式已通（A1/A3/A5–A7 未做） |
-| B | Prompt 与行为约束 | Day9 起步（B1/B3/B4/B5；B2 未做） |
+| B | Prompt 与行为约束 | Day9–10 完成（B1–B5） |
 | C | Tool + Agent Loop | Day2+Day9（C0.1–0.2 描述；C0.3–0.4 + C1 已有） |
 | D | 上下文 / 记忆 / RAG | Day4 完成 D1.1（D1.2/D2 未做） |
 | E | 规划 / 长任务 / 多 Agent | 未开始 |

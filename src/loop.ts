@@ -10,7 +10,11 @@ import {
 } from "./control.js";
 import { estimateMessagesChars, trimMessages } from "./context.js";
 import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
-import { resolvePromptProfile } from "./prompts.js";
+import {
+  fewShotDemoMessages,
+  profileLoadsProjectRules,
+  resolvePromptProfile,
+} from "./prompts.js";
 import { buildSystemPrompt, loadProjectRules } from "./rules.js";
 import {
   TOOLS_NEED_APPROVAL,
@@ -113,7 +117,8 @@ export async function runAgentLoop(
   const system = buildSystemPrompt(workspace, projectRules, {
     profile: promptProfile,
   });
-  const rulesLoaded = Boolean(projectRules) && promptProfile === "good";
+  const rulesLoaded =
+    Boolean(projectRules) && profileLoadsProjectRules(promptProfile);
 
   let messages: Message[];
   let steps = 0;
@@ -152,8 +157,12 @@ export async function runAgentLoop(
       detail: `从 ${cpId} 续跑（已完成 ${steps} 轮）`,
     });
   } else {
+    // Day10：fewshot 档在真实任务前插入示范对话（含 tool_calls 形状）
+    const demos =
+      promptProfile === "fewshot" ? fewShotDemoMessages() : [];
     messages = [
       { role: "system", content: system },
+      ...demos,
       { role: "user", content: userText },
     ];
     if (checkpoint) {

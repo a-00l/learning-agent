@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   builtInSystemLines,
+  profileLoadsProjectRules,
   resolvePromptProfile,
   type PromptProfile,
 } from "./prompts.js";
@@ -35,12 +36,8 @@ export function buildSystemPrompt(
   const profile = opts.profile ?? resolvePromptProfile();
   const base = builtInSystemLines(workspace, profile);
 
-  // sloppy 档：故意弱化项目规则，模拟「不读 AGENTS.md」的糟糕助手
-  if (profile === "sloppy") {
-    return base.join("\n");
-  }
-
-  if (!projectRules) {
+  // sloppy：故意不读 AGENTS.md；good/fewshot 拼接项目规则
+  if (!profileLoadsProjectRules(profile) || !projectRules) {
     return base.join("\n");
   }
 

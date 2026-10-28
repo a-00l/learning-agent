@@ -11,6 +11,9 @@
     "eval": "tsx src/eval.ts",
     "eval:day9:good": "tsx src/eval.ts --profile good --cases evals/cases-day9.json",
     "eval:day9:sloppy": "tsx src/eval.ts --profile sloppy --cases evals/cases-day9.json",
+    "eval:day10:good": "tsx src/eval.ts --profile good --cases evals/cases-day10.json",
+    "eval:day10:fewshot": "tsx src/eval.ts --profile fewshot --cases evals/cases-day10.json",
+    "eval:day10:sloppy": "tsx src/eval.ts --profile sloppy --cases evals/cases-day10.json",
     "server": "tsx src/server.ts"
   },
   "engines": {
