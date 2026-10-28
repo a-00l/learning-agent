@@ -8,13 +8,16 @@ export const readFileToolDef: ToolDefinition = {
   function: {
     name: "read_file",
     description:
-      "读取工作区内的一个文本文件。path 相对于工作区根目录，例如 package.json 或 src/main.ts。",
+      "读取工作区内【已知路径】的单个文本文件。" +
+      "适用：已知道确切相对路径（如 package.json、hello.js）。" +
+      "不适用：还不知道文件在哪——应先用 grep 搜索，不要对一堆候选路径盲目 read。" +
+      "path 相对工作区根目录。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "相对工作区的文件路径",
+          description: "相对工作区的文件路径，例如 package.json 或 hello.js",
         },
       },
       required: ["path"],

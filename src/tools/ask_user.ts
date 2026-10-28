@@ -6,13 +6,16 @@ export const askUserToolDef: ToolDefinition = {
   function: {
     name: "ask_user",
     description:
-      "向用户提问并等待回答。用于关键决策、需求不清、或需要用户在几个选项里二选一。不要用它闲聊。",
+      "向用户提问并等待回答。" +
+      "适用：路径/目标不清（「那个文件」）、二选一决策、缺少关键参数。" +
+      "不适用：闲聊、已经能用工具直接查清的事实问题。" +
+      "缺信息时必须先 ask_user，禁止猜测路径后直接 write_file。",
     parameters: {
       type: "object",
       properties: {
         question: {
           type: "string",
-          description: "要问用户的问题（简洁明确）",
+          description: "一个具体问题；可列出选项让用户回复编号或关键词",
         },
       },
       required: ["question"],

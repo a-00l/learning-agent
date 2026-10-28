@@ -9,13 +9,16 @@ export const runTerminalToolDef: ToolDefinition = {
   function: {
     name: "run_terminal",
     description:
-      "在工作区根目录执行一条被允许的 shell 命令。仅用于查看目录、跑 node/npm 等安全操作。不要尝试删文件或访问工作区外路径。",
+      "在工作区根目录执行【白名单】shell 命令；有副作用，可能需批准。" +
+      "适用：验证改动（如 node hello.js）、查看目录（ls/dir）。" +
+      "不适用：删文件、装未知包、链式危险命令、工作区外路径；这些会被拒绝。" +
+      "改代码后应用本工具跑通，再声称成功。",
     parameters: {
       type: "object",
       properties: {
         command: {
           type: "string",
-          description: "完整命令行，例如: node hello.js 或 npm test",
+          description: "单条命令，例如 node hello.js 或 npm test（勿用 ;|& 拼接）",
         },
       },
       required: ["command"],

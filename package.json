@@ -9,6 +9,8 @@
     "chat": "tsx src/cli.ts",
     "replay": "tsx src/replay.ts",
     "eval": "tsx src/eval.ts",
+    "eval:day9:good": "tsx src/eval.ts --profile good --cases evals/cases-day9.json",
+    "eval:day9:sloppy": "tsx src/eval.ts --profile sloppy --cases evals/cases-day9.json",
     "server": "tsx src/server.ts"
   },
   "engines": {

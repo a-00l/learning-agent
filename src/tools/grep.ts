@@ -9,7 +9,10 @@ export const grepToolDef: ToolDefinition = {
   function: {
     name: "grep",
     description:
-      "在工作区内用子字符串搜索文本文件，返回匹配行（路径:行号:内容）。适合找函数名、报错、配置键。",
+      "在工作区内按子字符串搜索，返回匹配行（路径/行号/内容）。" +
+      "适用：定位「哪里出现了某词/函数名/配置键」，或尚不知道该读哪个文件。" +
+      "不适用：已有确切路径且需要全文——请用 read_file。" +
+      "比连续盲读多个文件更省 token。",
     parameters: {
       type: "object",
       properties: {
@@ -19,7 +22,7 @@ export const grepToolDef: ToolDefinition = {
         },
         path: {
           type: "string",
-          description: "相对工作区的目录或文件，默认整个工作区",
+          description: "限定搜索的相对目录或文件；省略则搜整个工作区",
         },
         max_matches: {
           type: "number",

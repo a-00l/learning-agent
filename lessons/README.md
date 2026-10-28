@@ -10,5 +10,6 @@
 | Day 6 | [day-06-回归评测.md](./day-06-回归评测.md) | 已完成 |
 | Day 7 | [day-07-Checkpoint与SSE.md](./day-07-Checkpoint与SSE.md) | 已完成 |
 | Day 8 | [day-08-运行中干预.md](./day-08-运行中干预.md) | 已完成 |
+| Day 9 | [day-09-Prompt与工具描述.md](./day-09-Prompt与工具描述.md) | 已完成 |
 
 约定：每节收尾必须更新本表与对应笔记。

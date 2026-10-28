@@ -39,6 +39,20 @@ function loadDotEnv(file: string) {
 
 loadDotEnv(path.join(root, ".env"));
 
+/** 解析 --profile / --cases（Windows npm 不吃 VAR=value 前缀，用参数更稳） */
+function parseArgs(argv: string[]) {
+  let profile: string | undefined;
+  let cases: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--profile" && argv[i + 1]) profile = argv[++i];
+    else if (a.startsWith("--profile=")) profile = a.slice("--profile=".length);
+    else if (a === "--cases" && argv[i + 1]) cases = argv[++i];
+    else if (a.startsWith("--cases=")) cases = a.slice("--cases=".length);
+  }
+  return { profile, cases };
+}
+
 /** 与 cases.json 里 expect 字段对齐 */
 type Expect = {
   /** 实际工具集合中至少命中一个 */
@@ -57,6 +71,8 @@ type CaseDef = {
   prompt: string;
   /** true：写文件/跑命令自动批准；缺省/false：一律拒绝（适合只读题） */
   auto_approve?: boolean;
+  /** Day9：若模型调用 ask_user，评测用这句自动回答（无人值守） */
+  ask_user_reply?: string;
   expect: Expect;
 };
 
@@ -150,6 +166,9 @@ async function runCase(
     trace,
     // 无人值守：写题自动放行；只读题拒绝一切副作用，防止评测改坏仓库
     onApprove: c.auto_approve ? async () => true : async () => false,
+    onAskUser: c.ask_user_reply
+      ? async () => c.ask_user_reply!
+      : undefined,
     onStep: () => {
       // 安静模式；细节去看生成的 trace 文件
     },
@@ -179,12 +198,22 @@ async function runCase(
 }
 
 async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  // CLI 优先，其次环境变量；写入 env 以便 rules/prompts 读到同一档
+  if (args.profile) process.env.PROMPT_PROFILE = args.profile;
+  if (args.cases) process.env.EVAL_CASES = args.cases;
+
   const workspace = path.resolve(
     process.env.WORKSPACE?.trim() || path.join(root, "playground"),
   );
   const model = process.env.OPENAI_MODEL || "deepseek-chat";
   const tracesDir = path.join(root, "traces");
-  const casesPath = path.join(root, "evals", "cases.json");
+  // Day9：--cases / EVAL_CASES；--profile / PROMPT_PROFILE
+  const casesRel = process.env.EVAL_CASES?.trim() || "evals/cases.json";
+  const casesPath = path.isAbsolute(casesRel)
+    ? casesRel
+    : path.join(root, casesRel);
+  const promptProfile = (process.env.PROMPT_PROFILE ?? "good").trim() || "good";
 
   if (!process.env.OPENAI_API_KEY?.trim()) {
     console.error("缺少 OPENAI_API_KEY，请配置 .env");
@@ -193,6 +222,8 @@ async function main() {
 
   const cases = JSON.parse(fs.readFileSync(casesPath, "utf8")) as CaseDef[];
   console.log(`mini-cursor eval · ${cases.length} cases`);
+  console.log(`cases: ${casesPath}`);
+  console.log(`PROMPT_PROFILE: ${promptProfile}`);
   console.log(`workspace: ${workspace}`);
   console.log(`model: ${model}\n`);
 
@@ -235,6 +266,8 @@ async function main() {
     finishedAt: new Date().toISOString(),
     model,
     workspace,
+    promptProfile,
+    casesPath,
     passed,
     total: results.length,
     results,

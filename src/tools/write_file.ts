@@ -10,17 +10,20 @@ export const writeFileToolDef: ToolDefinition = {
   function: {
     name: "write_file",
     description:
-      "写入（覆盖或新建）工作区内的文本文件。content 为完整文件内容。改小段代码前请先 read_file，再提交完整新内容。",
+      "整文件覆盖写入（或新建）工作区内文本文件；有副作用，可能需用户批准。" +
+      "适用：用户明确要求修改/创建，且路径已确定。" +
+      "不适用：只读问答、路径不清（应 ask_user）、尚未 read 过原文就改小段。" +
+      "流程：先 read_file → 在完整内容上修改 → 再 write_file。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "相对工作区的文件路径",
+          description: "相对工作区的目标文件路径",
         },
         content: {
           type: "string",
-          description: "要写入的完整文本内容",
+          description: "写入后的完整文件文本（不是 diff 片段）",
         },
       },
       required: ["path", "content"],

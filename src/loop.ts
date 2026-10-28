@@ -10,6 +10,7 @@ import {
 } from "./control.js";
 import { estimateMessagesChars, trimMessages } from "./context.js";
 import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
+import { resolvePromptProfile } from "./prompts.js";
 import { buildSystemPrompt, loadProjectRules } from "./rules.js";
 import {
   TOOLS_NEED_APPROVAL,
@@ -108,8 +109,11 @@ export async function runAgentLoop(
 ): Promise<LoopResult> {
   const { onStep, onApprove, onAskUser, onToken, trace, checkpoint } = options;
   const projectRules = await loadProjectRules(workspace);
-  const system = buildSystemPrompt(workspace, projectRules);
-  const rulesLoaded = Boolean(projectRules);
+  const promptProfile = resolvePromptProfile();
+  const system = buildSystemPrompt(workspace, projectRules, {
+    profile: promptProfile,
+  });
+  const rulesLoaded = Boolean(projectRules) && promptProfile === "good";
 
   let messages: Message[];
   let steps = 0;

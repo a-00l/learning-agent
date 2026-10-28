@@ -2,8 +2,8 @@
 
 > 目标：打牢基础，再做工程化 Agent（偏编码型 / 产品型）。  
 > 用法：按阶段推进，做完一项勾选一项；未勾选不急着跳到下一阶段。  
-> 演示仓库：本目录 `mini-cursor/`（Day 8：运行中干预）  
-> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–8）
+> 演示仓库：本目录 `mini-cursor/`（Day 9：Prompt 与工具描述）  
+> 课时笔记：[`lessons/`](./lessons/)（已有 Day1–9）
 
 ---
 
@@ -24,13 +24,14 @@
 
 ## 阶段 B：Prompt 与行为约束
 
-- [ ] **B1 Prompt 结构**：角色、目标、约束、输出格式怎么写才稳
-- [ ] **B2 Few-shot**：用例子约束风格与边界 case
-- [ ] **B3 工具描述写作**：name / description / parameters 如何降低误选
-- [ ] **B4 拒答与边界**：越权、不确定、缺信息时该怎么表现
-- [ ] **B5 Prompt Injection 入门**：不可信输入如何污染指令；基本防护思路
+- [x] **B1 Prompt 结构**：角色、目标、约束、输出格式怎么写才稳 → Day9 `prompts.ts` good 档
+- [ ] **B2 Few-shot**：用例子约束风格与边界 case（未做）
+- [x] **B3 工具描述写作**：name / description / parameters 如何降低误选 → 各 `*ToolDef` 适用/不适用
+- [x] **B4 拒答与边界**：越权、不确定、缺信息时该怎么表现 → ask_user + Day9 题
+- [x] **B5 Prompt Injection 入门**：不可信输入如何污染指令；基本防护思路 → `untrusted_note.md` + system 约束
 
-**阶段验收**：同一任务写出「差 prompt / 好 prompt」对比，并能量化差异（成功率或人工评分）。
+**阶段验收**：同一任务写出「差 prompt / 好 prompt」对比，并能量化差异（成功率或人工评分）。  
+**进度**：Day9 用 `eval:day9:good` vs `eval:day9:sloppy` 对照。
 
 ---
 
@@ -38,8 +39,8 @@
 
 ### C0 Tool 设计（先于发现）
 
-- [ ] **C0.1 工具粒度**：太粗难控 vs 太细费 token
-- [ ] **C0.2 参数设计**：必填/可选、枚举、默认值、校验
+- [x] **C0.1 工具粒度**：太粗难控 vs 太细费 token → Day9 description 区分 grep/read/write
+- [x] **C0.2 参数设计**：必填/可选、枚举、默认值、校验 → 参数说明加强（枚举级未做）
 - [x] **C0.3 错误返回格式**：让模型「看懂」失败原因并可重试 → 各工具统一 `{ ok, error }`
 - [x] **C0.4 副作用分类**：只读工具 vs 写操作；不可重试操作单独标记 → read/grep 只读，write/terminal 有副作用
 
@@ -206,8 +207,8 @@
 | 阶段 | 主题 | 状态 |
 |------|------|------|
 | A | LLM 与调用基础 | A2 + A4 流式已通（A1/A3/A5–A7 未做） |
-| B | Prompt 与行为约束 | 未开始 |
-| C | Tool + Agent Loop | Day2 完成（C0.3–0.4 + C1 四工具） |
+| B | Prompt 与行为约束 | Day9 起步（B1/B3/B4/B5；B2 未做） |
+| C | Tool + Agent Loop | Day2+Day9（C0.1–0.2 描述；C0.3–0.4 + C1 已有） |
 | D | 上下文 / 记忆 / RAG | Day4 完成 D1.1（D1.2/D2 未做） |
 | E | 规划 / 长任务 / 多 Agent | 未开始 |
 | F | 规则 / 沙箱 / 长命令 / 工具发现 | Day3 完成 F1 + F2.1–2.3（长命令/工具发现未做） |
