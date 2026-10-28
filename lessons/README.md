@@ -13,5 +13,6 @@
 | Day 9 | [day-09-Prompt与工具描述.md](./day-09-Prompt与工具描述.md) | 已完成 |
 | Day 10 | [day-10-Few-shot.md](./day-10-Few-shot.md) | 已完成 |
 | Day 11 | [day-11-摘要压缩.md](./day-11-摘要压缩.md) | 已完成 |
+| Day 12 | [day-12-关键事实抽取.md](./day-12-关键事实抽取.md) | 已完成 |
 
 约定：每节收尾必须更新本表与对应笔记。

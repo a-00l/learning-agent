@@ -9,6 +9,14 @@ import {
   unregisterControl,
 } from "./control.js";
 import { estimateMessagesChars, trimMessages } from "./context.js";
+import {
+  emptyFacts,
+  factsEnabled,
+  refreshFacts,
+  renderFactsCard,
+  upsertFactsMessage,
+  type TaskFacts,
+} from "./facts.js";
 import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
 import {
   fewShotDemoMessages,
@@ -47,6 +55,7 @@ export type LoopOptions = {
       | "tool"
       | "deny"
       | "trim"
+      | "facts"
       | "checkpoint"
       | "paused"
       | "inject"
@@ -126,6 +135,8 @@ export async function runAgentLoop(
   let cpId: string | undefined;
   let userGoal = userText;
   let createdAt = new Date().toISOString();
+  let facts: TaskFacts = emptyFacts(userText);
+  const useFacts = factsEnabled();
 
   if (checkpoint?.resumeId) {
     const loaded = await checkpoint.store.load(checkpoint.resumeId);
@@ -145,6 +156,7 @@ export async function runAgentLoop(
     steps = loaded.steps;
     trimEvents = loaded.trimEvents;
     createdAt = loaded.createdAt;
+    facts = loaded.facts ?? emptyFacts(loaded.userText);
     messages = loaded.messages.map((m) => ({ ...m }));
     if (messages[0]?.role === "system") {
       messages[0] = { role: "system", content: system };
@@ -165,6 +177,10 @@ export async function runAgentLoop(
       ...demos,
       { role: "user", content: userText },
     ];
+    if (useFacts) {
+      facts = emptyFacts(userText);
+      messages = upsertFactsMessage(messages, renderFactsCard(facts));
+    }
     if (checkpoint) {
       cpId = newCheckpointId();
     }
@@ -192,6 +208,7 @@ export async function runAgentLoop(
         function: { ...c.function },
       })),
     })),
+    facts: useFacts ? facts : undefined,
     createdAt,
     updatedAt: new Date().toISOString(),
     error,
@@ -244,6 +261,17 @@ export async function runAgentLoop(
 
       steps += 1;
 
+      // Day12：先刷新事实卡，再裁剪；裁剪后把卡重新钉回 system 后
+      if (useFacts) {
+        facts = await refreshFacts(facts, messages);
+        messages = upsertFactsMessage(messages, renderFactsCard(facts));
+        onStep?.({
+          step: steps,
+          kind: "facts",
+          detail: `事实卡 notes=[${facts.notes.join("; ")}] paths=[${facts.paths.join(", ")}]`,
+        });
+      }
+
       const { messages: trimmed, stats } = await trimMessages(messages);
       if (stats.didTrim) {
         trimEvents += 1;
@@ -268,6 +296,10 @@ export async function runAgentLoop(
         });
         messages.length = 0;
         messages.push(...trimmed);
+      }
+
+      if (useFacts) {
+        messages = upsertFactsMessage(messages, renderFactsCard(facts));
       }
 
       const contextChars = estimateMessagesChars(messages);

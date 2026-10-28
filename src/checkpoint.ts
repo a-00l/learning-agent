@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { TaskFacts } from "./facts.js";
 import type { Message } from "./types.js";
 
 export type CheckpointStatus = "running" | "done" | "failed" | "cancelled";
@@ -13,6 +14,8 @@ export type Checkpoint = {
   steps: number;
   trimEvents: number;
   messages: Message[];
+  /** Day12：旁路事实卡，与 messages 一起恢复 */
+  facts?: TaskFacts;
   createdAt: string;
   updatedAt: string;
   error?: string;
