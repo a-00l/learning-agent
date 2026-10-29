@@ -5,12 +5,20 @@ import { fileURLToPath } from "node:url";
 import { CheckpointStore } from "./checkpoint.js";
 import { applyControlAction } from "./control.js";
 import { runAgentLoop } from "./loop.js";
+import {
+  defaultMemoryPath,
+  forgetByText,
+  loadMemory,
+  memoryEnabled,
+  rememberFromUser,
+} from "./memory.js";
 import { TraceRecorder } from "./trace.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const tracesDir = path.join(root, "traces");
 const checkpointsDir = path.join(root, "checkpoints");
+const memoryFile = defaultMemoryPath(root);
 
 function loadDotEnv(file: string) {
   if (!fs.existsSync(file)) return;
@@ -41,15 +49,19 @@ const model = process.env.OPENAI_MODEL || "deepseek-chat";
 const cpStore = new CheckpointStore(checkpointsDir);
 
 async function main() {
-  console.log("mini-cursor · Day 12（关键事实卡）");
+  console.log("mini-cursor · Day 13（长期记忆）");
   console.log(`工作区: ${workspace}`);
   console.log(`模型: ${model}`);
   console.log(
     `PROMPT_PROFILE: ${process.env.PROMPT_PROFILE || "good"}（good|sloppy|fewshot）`,
   );
   console.log(
-    `CONTEXT_SUMMARY: ${process.env.CONTEXT_SUMMARY || "0"}  TASK_FACTS: ${process.env.TASK_FACTS || "0"}  CONTEXT_MAX_CHARS: ${process.env.CONTEXT_MAX_CHARS || "20000"}`,
+    `LONG_TERM_MEMORY: ${process.env.LONG_TERM_MEMORY || "0"}  文件: ${memoryFile}`,
   );
+  console.log(
+    `CONTEXT_SUMMARY: ${process.env.CONTEXT_SUMMARY || "0"}  TASK_FACTS: ${process.env.TASK_FACTS || "0"}`,
+  );
+  console.log("记忆: 记住：… | 忘记：… | mem");
   console.log("任务进行中可输入: !pause | !resume | !cancel | !inject <文字>");
   console.log("其它: cps | resume <id> | exit\n");
 
@@ -101,6 +113,34 @@ async function main() {
     const input = (await ask("you> ")).trim();
     if (!input || input === "exit" || input === "quit") break;
 
+    // Day13：显式长期记忆命令（不跑 Agent）
+    if (input === "mem" || input === "memory") {
+      const store = await loadMemory(memoryFile);
+      if (!store.items.length) console.log("(长期记忆为空)\n");
+      else {
+        for (const it of store.items) {
+          console.log(`  ${it.id}  ${it.text}`);
+        }
+        console.log(`  (file: ${memoryFile})\n`);
+      }
+      continue;
+    }
+
+    const remembered = await rememberFromUser(memoryFile, input);
+    if (remembered) {
+      console.log(`  [memory] 已记住: ${remembered.text}`);
+      console.log(`  (写入 ${memoryFile}；新对话且 LONG_TERM_MEMORY=1 时会注入)\n`);
+      continue;
+    }
+
+    const forgetMatch = input.match(/^忘记[:：]\s*(.+)$/s);
+    if (forgetMatch) {
+      const removed = await forgetByText(memoryFile, forgetMatch[1]);
+      if (removed) console.log(`  [memory] 已删除: ${removed.text}\n`);
+      else console.log("  [memory] 未找到匹配条目\n");
+      continue;
+    }
+
     if (input === "cps" || input === "checkpoints") {
       const list = await cpStore.list();
       if (!list.length) console.log("(暂无 checkpoint)\n");
@@ -138,10 +178,10 @@ async function main() {
       const loopPromise = runAgentLoop(workspace, userText, {
         trace,
         checkpoint: { store: cpStore, resumeId },
+        memoryFile: memoryEnabled() ? memoryFile : undefined,
         onToken: (delta) => process.stdout.write(delta),
         onStep: ({ kind, detail }) => {
           console.log(`\n  [${kind}] ${detail}`);
-          // 从「控制通道 id=xxx」里抠出 activeId
           if (kind === "checkpoint" && detail.includes("控制通道 id=")) {
             const m = detail.match(/控制通道 id=(\S+)/);
             if (m) activeId = m[1];

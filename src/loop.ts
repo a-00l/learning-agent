@@ -19,6 +19,13 @@ import {
 } from "./facts.js";
 import { appendAssistant, appendToolResult, chatStream } from "./llm.js";
 import {
+  loadMemory,
+  memoryEnabled,
+  pickForPrompt,
+  renderLongTermMemory,
+  upsertLongTermMessage,
+} from "./memory.js";
+import {
   fewShotDemoMessages,
   profileLoadsProjectRules,
   resolvePromptProfile,
@@ -56,6 +63,7 @@ export type LoopOptions = {
       | "deny"
       | "trim"
       | "facts"
+      | "memory"
       | "checkpoint"
       | "paused"
       | "inject"
@@ -71,6 +79,8 @@ export type LoopOptions = {
     store: CheckpointStore;
     resumeId?: string;
   };
+  /** Day13：长期记忆 JSON 路径；开启 LONG_TERM_MEMORY=1 时注入 */
+  memoryFile?: string;
   /**
    * 运行中干预。不传则自动按 checkpointId 注册一份。
    * 外部可用 getControl(id) / applyControlAction 操作。
@@ -137,6 +147,9 @@ export async function runAgentLoop(
   let createdAt = new Date().toISOString();
   let facts: TaskFacts = emptyFacts(userText);
   const useFacts = factsEnabled();
+  const useLongTerm = memoryEnabled() && Boolean(options.memoryFile);
+  /** 本任务开场挑好的长期记忆卡；trim 后需再钉 */
+  let longTermCard = "";
 
   if (checkpoint?.resumeId) {
     const loaded = await checkpoint.store.load(checkpoint.resumeId);
@@ -180,6 +193,20 @@ export async function runAgentLoop(
     if (useFacts) {
       facts = emptyFacts(userText);
       messages = upsertFactsMessage(messages, renderFactsCard(facts));
+    }
+    // Day13：跨会话长期记忆 → 开场注入（resume 不重复灌，避免和旧 messages 叠两份）
+    if (useLongTerm && options.memoryFile) {
+      const store = await loadMemory(options.memoryFile);
+      const picked = pickForPrompt(store, { query: userText, limit: 5 });
+      longTermCard = renderLongTermMemory(picked);
+      if (longTermCard) {
+        messages = upsertLongTermMessage(messages, longTermCard);
+        onStep?.({
+          step: 0,
+          kind: "memory",
+          detail: `长期记忆注入 ${picked.length} 条 ← ${options.memoryFile}`,
+        });
+      }
     }
     if (checkpoint) {
       cpId = newCheckpointId();
@@ -300,6 +327,9 @@ export async function runAgentLoop(
 
       if (useFacts) {
         messages = upsertFactsMessage(messages, renderFactsCard(facts));
+      }
+      if (useLongTerm && longTermCard) {
+        messages = upsertLongTermMessage(messages, longTermCard);
       }
 
       const contextChars = estimateMessagesChars(messages);

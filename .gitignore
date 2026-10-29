@@ -5,3 +5,5 @@ dist/
 traces/*.json
 checkpoints/*.json
 evals/last-report.json
+memory/user.json
+memory/demo-day13.json
