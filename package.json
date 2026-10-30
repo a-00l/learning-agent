@@ -17,6 +17,8 @@
     "demo:day11": "tsx src/demo_day11.ts",
     "demo:day12": "tsx src/demo_day12.ts",
     "demo:day13": "tsx src/demo_day13.ts",
+    "rag:index": "tsx src/rag_index.ts",
+    "demo:day14": "tsx src/demo_day14.ts",
     "server": "tsx src/server.ts"
   },
   "engines": {

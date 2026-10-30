@@ -7,3 +7,4 @@ checkpoints/*.json
 evals/last-report.json
 memory/user.json
 memory/demo-day13.json
+memory/rag-index.json

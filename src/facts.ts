@@ -98,9 +98,10 @@ export function updateFactsHeuristic(
       typeof m.content === "string" &&
       (m.content.startsWith("[context ") ||
         m.content.startsWith(FACTS_MARKER) ||
-        m.content.startsWith("[long-term memory]"))
+        m.content.startsWith("[long-term memory]") ||
+        m.content.startsWith("[rag]"))
     ) {
-      continue; // 跳过裁剪通知 / 事实卡 / 长期记忆卡，避免自我循环污染
+      continue; // 跳过裁剪通知 / 事实卡 / 长期记忆 / RAG，避免自我循环污染
     }
 
     if (m.role === "user" && !facts.goal && m.content) {

@@ -26,6 +26,13 @@ import {
   upsertLongTermMessage,
 } from "./memory.js";
 import {
+  loadIndex,
+  ragEnabled,
+  renderRagBlock,
+  retrieve,
+  upsertRagMessage,
+} from "./rag.js";
+import {
   fewShotDemoMessages,
   profileLoadsProjectRules,
   resolvePromptProfile,
@@ -64,6 +71,7 @@ export type LoopOptions = {
       | "trim"
       | "facts"
       | "memory"
+      | "rag"
       | "checkpoint"
       | "paused"
       | "inject"
@@ -81,6 +89,8 @@ export type LoopOptions = {
   };
   /** Day13：长期记忆 JSON 路径；开启 LONG_TERM_MEMORY=1 时注入 */
   memoryFile?: string;
+  /** Day14：RAG 索引路径；开启 RAG=1 时检索注入 */
+  ragIndexFile?: string;
   /**
    * 运行中干预。不传则自动按 checkpointId 注册一份。
    * 外部可用 getControl(id) / applyControlAction 操作。
@@ -148,8 +158,10 @@ export async function runAgentLoop(
   let facts: TaskFacts = emptyFacts(userText);
   const useFacts = factsEnabled();
   const useLongTerm = memoryEnabled() && Boolean(options.memoryFile);
+  const useRag = ragEnabled() && Boolean(options.ragIndexFile);
   /** 本任务开场挑好的长期记忆卡；trim 后需再钉 */
   let longTermCard = "";
+  let ragCard = "";
 
   if (checkpoint?.resumeId) {
     const loaded = await checkpoint.store.load(checkpoint.resumeId);
@@ -205,6 +217,30 @@ export async function runAgentLoop(
           step: 0,
           kind: "memory",
           detail: `长期记忆注入 ${picked.length} 条 ← ${options.memoryFile}`,
+        });
+      }
+    }
+    // Day14：RAG Top-K 注入
+    if (useRag && options.ragIndexFile) {
+      try {
+        const index = await loadIndex(options.ragIndexFile);
+        const k = Number(process.env.RAG_TOP_K || 3) || 3;
+        const hits = await retrieve(index, userText, k);
+        ragCard = renderRagBlock(hits);
+        if (ragCard) {
+          messages = upsertRagMessage(messages, ragCard);
+          onStep?.({
+            step: 0,
+            kind: "rag",
+            detail: `RAG 注入 ${hits.length} 条 score≈${hits[0]?.score.toFixed(3) ?? "-"} ← ${options.ragIndexFile}`,
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        onStep?.({
+          step: 0,
+          kind: "rag",
+          detail: `RAG 跳过: ${msg}（可先 npm run rag:index）`,
         });
       }
     }
@@ -330,6 +366,9 @@ export async function runAgentLoop(
       }
       if (useLongTerm && longTermCard) {
         messages = upsertLongTermMessage(messages, longTermCard);
+      }
+      if (useRag && ragCard) {
+        messages = upsertRagMessage(messages, ragCard);
       }
 
       const contextChars = estimateMessagesChars(messages);

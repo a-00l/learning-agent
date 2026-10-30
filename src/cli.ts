@@ -12,6 +12,7 @@ import {
   memoryEnabled,
   rememberFromUser,
 } from "./memory.js";
+import { defaultRagIndexPath, ragEnabled } from "./rag.js";
 import { TraceRecorder } from "./trace.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ const root = path.resolve(__dirname, "..");
 const tracesDir = path.join(root, "traces");
 const checkpointsDir = path.join(root, "checkpoints");
 const memoryFile = defaultMemoryPath(root);
+const ragIndexFile = defaultRagIndexPath(root);
 
 function loadDotEnv(file: string) {
   if (!fs.existsSync(file)) return;
@@ -49,19 +51,19 @@ const model = process.env.OPENAI_MODEL || "deepseek-chat";
 const cpStore = new CheckpointStore(checkpointsDir);
 
 async function main() {
-  console.log("mini-cursor · Day 13（长期记忆）");
+  console.log("mini-cursor · Day 14（RAG）");
   console.log(`工作区: ${workspace}`);
   console.log(`模型: ${model}`);
   console.log(
     `PROMPT_PROFILE: ${process.env.PROMPT_PROFILE || "good"}（good|sloppy|fewshot）`,
   );
   console.log(
-    `LONG_TERM_MEMORY: ${process.env.LONG_TERM_MEMORY || "0"}  文件: ${memoryFile}`,
+    `RAG: ${process.env.RAG || "0"}  索引: ${ragIndexFile}`,
   );
   console.log(
-    `CONTEXT_SUMMARY: ${process.env.CONTEXT_SUMMARY || "0"}  TASK_FACTS: ${process.env.TASK_FACTS || "0"}`,
+    `LONG_TERM_MEMORY: ${process.env.LONG_TERM_MEMORY || "0"}  TASK_FACTS: ${process.env.TASK_FACTS || "0"}`,
   );
-  console.log("记忆: 记住：… | 忘记：… | mem");
+  console.log("记忆: 记住：… | 忘记：… | mem；RAG 先: npm run rag:index");
   console.log("任务进行中可输入: !pause | !resume | !cancel | !inject <文字>");
   console.log("其它: cps | resume <id> | exit\n");
 
@@ -179,6 +181,7 @@ async function main() {
         trace,
         checkpoint: { store: cpStore, resumeId },
         memoryFile: memoryEnabled() ? memoryFile : undefined,
+        ragIndexFile: ragEnabled() ? ragIndexFile : undefined,
         onToken: (delta) => process.stdout.write(delta),
         onStep: ({ kind, detail }) => {
           console.log(`\n  [${kind}] ${detail}`);
